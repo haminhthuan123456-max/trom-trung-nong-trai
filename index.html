@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trộm Trứng Nông Trại</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Be+Vietnam+Pro:wght@400;600&display=swap">
+<style>
+/* Layout: canvas nông trại toàn màn hình; bảng gỗ HUD nổi ở các góc. Một giao diện cố định (không đổi theo theme). */
+:root {
+  --grass: #7cc25a;
+  --ink: #2b1d0e;
+  --wood: #6b4423;
+  --wood-hi: #8a5a30;
+  --cream: #fff4dc;
+  --gold: #ffc83d;
+  --danger: #e8453c;
+  --sky: #5fd0e8;
+  --f-display: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
+  --f-body: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--grass); color: var(--cream); font-family: var(--f-body); user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.hud-top {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; pointer-events: none;
+}
+.hud-top > * { pointer-events: auto; }
+.chip {
+  background: var(--wood); border: 3px solid var(--ink); border-radius: 14px; padding: 4px 14px 2px;
+  box-shadow: 0 4px 0 var(--ink); font-family: var(--f-display); line-height: 1.1;
+}
+.chip .big { font-size: 26px; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+.chip .small { font-size: 13px; font-weight: 600; opacity: .85; font-family: var(--f-body); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  font-family: var(--f-display); font-weight: 800; font-size: 17px; color: var(--ink);
+  background: var(--gold); border: 3px solid var(--ink); border-radius: 12px; padding: 6px 14px 3px;
+  box-shadow: 0 4px 0 var(--ink); cursor: pointer; touch-action: manipulation;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.btn:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+.btn[disabled] { filter: grayscale(.8) brightness(.85); cursor: not-allowed; }
+.btn.blue { background: var(--sky); }
+.btn.red { background: var(--danger); color: var(--cream); }
+.btn.cream { background: var(--cream); }
+
+.hud-bottom {
+  position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+}
+#actBtn { font-size: 22px; min-width: 150px; padding: 12px 20px 8px; }
+#actBtn.steal { background: var(--danger); color: var(--cream); }
+
+#toasts { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 70px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(92vw, 460px); }
+.toast { background: rgba(43,29,14,.88); border: 2px solid var(--ink); border-radius: 10px; padding: 5px 12px; font-weight: 600; font-size: 14px; text-align: center; animation: pop .2s ease-out; }
+.toast.bad { background: var(--danger); }
+.toast.good { background: #2f8a3a; }
+@keyframes pop { from { transform: scale(.8); opacity: 0; } }
+
+#joy { position: fixed; width: 120px; height: 120px; border-radius: 50%; background: rgba(43,29,14,.25); border: 3px solid rgba(43,29,14,.5); pointer-events: none; transform: translate(-50%,-50%); }
+#joyKnob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--cream); border: 3px solid var(--ink); }
+
+.modal { position: fixed; inset: 0; background: rgba(20,14,6,.6); display: grid; place-items: center; padding: 16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); z-index: 20; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+.panel {
+  background: var(--wood); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 8px 0 var(--ink);
+  width: min(100%, 440px); max-height: 90vh; overflow: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+}
+.panel h1, .panel h2 { font-family: var(--f-display); margin: 0; line-height: 1; text-wrap: balance; }
+.panel h1 { font-size: 44px; color: var(--gold); text-shadow: 0 3px 0 var(--ink); }
+.panel h2 { font-size: 28px; color: var(--gold); }
+.panel p { margin: 0; line-height: 1.5; font-size: 14px; }
+.panel ul { margin: 0; padding-left: 18px; line-height: 1.6; font-size: 14px; }
+.kbd { font-family: var(--f-display); background: var(--cream); color: var(--ink); border-radius: 5px; padding: 0 5px; font-weight: 800; }
+.panel input { font: 600 16px var(--f-body); padding: 8px 10px; border-radius: 10px; border: 3px solid var(--ink); background: var(--cream); color: var(--ink); }
+.panel input:focus-visible { outline: 3px solid var(--sky); }
+.upg { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; background: var(--wood-hi); border: 2px solid var(--ink); border-radius: 12px; padding: 10px 12px; }
+.upg b { font-family: var(--f-display); font-size: 19px; }
+.upg span { font-size: 13px; opacity: .9; grid-column: 1; }
+.upg .btn { grid-row: 1 / span 2; grid-column: 2; }
+.copy { font-size: 12px !important; opacity: .75; text-align: center; }
+.tiers { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.tiers i { font-style: normal; padding: 1px 8px; border-radius: 99px; color: var(--ink); font-weight: 600; border: 2px solid var(--ink); }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div class="hud-top">
+  <div class="chip">
+    <div class="big" id="coins">0</div>
+    <div class="small" id="ips">+0 / giây</div>
+  </div>
+  <div class="row">
+    <button class="btn cream" id="upgBtn" type="button">Nâng cấp</button>
+    <button class="btn blue" id="lockBtn" type="button">Khóa căn cứ</button>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="joy" hidden><div id="joyKnob"></div></div>
+
+<div class="hud-bottom">
+  <button class="btn cream" id="sellBtn" type="button" hidden>Bán</button>
+  <button class="btn" id="actBtn" type="button" hidden>Hành động</button>
+</div>
+
+<div class="modal" id="startModal">
+  <div class="panel">
+    <h1>Trộm Trứng Nông Trại</h1>
+    <p>Mua trứng trên băng chuyền, ấp nở thành thú, nuôi chúng lớn lên để kiếm vàng. Lẻn sang căn cứ đối thủ để trộm thú quý, và nhớ khóa căn cứ của mình.</p>
+    <label for="nameInput" class="copy" style="text-align:left;opacity:1;font-size:13px!important">Tên nhân vật</label>
+    <input id="nameInput" maxlength="14" placeholder="Nhập tên của bạn" value="Bạn">
+    <button class="btn" id="playBtn" type="button" style="font-size:24px">Chơi ngay</button>
+    <p class="copy" id="errBox" hidden style="color:#ffd0c8;opacity:1"></p>
+    <ul>
+      <li>Di chuyển: <span class="kbd">WASD</span> / phím mũi tên, hoặc kéo ngón tay trên màn hình</li>
+      <li>Mua trứng / trộm: <span class="kbd">E</span> hoặc <span class="kbd">Space</span></li>
+      <li>Bán thú gần bạn: <span class="kbd">Q</span> · Khóa căn cứ: <span class="kbd">L</span> · Nâng cấp: <span class="kbd">U</span></li>
+      <li>Đi ngang qua ô chuồng để nhặt vàng thú làm ra</li>
+    </ul>
+    <div class="tiers" id="tierList"></div>
+    <p class="copy" id="copyright"></p>
+  </div>
+</div>
+
+<div class="modal" id="upgModal" hidden>
+  <div class="panel">
+    <h2>Nâng cấp</h2>
+    <div id="upgList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button class="btn cream" id="closeUpg" type="button">Đóng</button>
+  </div>
+</div>
+
+<script>
+window.onerror = function (msg) { var b = document.getElementById('errBox'); if (b) { b.hidden = false; b.textContent = 'Lỗi: ' + msg; } };
+</script>
+<script>
+// ================== THÔNG TIN BẢN QUYỀN ==================
+// Đổi tên dưới đây thành tên của anh / studio của anh.
+const OWNER_NAME = "Thuận";
+const GAME_NAME = "Trộm Trứng Nông Trại";
+// =========================================================
+
+const SAVE_KEY = 'trom-trung-nong-trai-v1';
+const W = 1700, H = 1100, BELT_Y = 550, BELT_SPEED = 70, BW = 600, BH = 300;
+
+const TIERS = [
+  { name: 'Thường',      price: 10,    hatch: 8,  inc: 1,   color: '#f6eedc', spot: '#c9b48a', kinds: ['🐔','🐰','🐷'], w: 60 },
+  { name: 'Hiếm',        price: 80,    hatch: 15, inc: 6,   color: '#9fd3ff', spot: '#3d8bd6', kinds: ['🐮','🐑','🐐'], w: 25 },
+  { name: 'Sử thi',      price: 450,   hatch: 25, inc: 28,  color: '#d6a6ff', spot: '#8a3fd1', kinds: ['🦊','🐼','🐨'], w: 10 },
+  { name: 'Huyền thoại', price: 2500,  hatch: 40, inc: 140, color: '#ffd36b', spot: '#d68a00', kinds: ['🦁','🐯','🦒'], w: 4 },
+  { name: 'Thần thoại',  price: 15000, hatch: 60, inc: 800, color: '#ff7a9c', spot: '#c4134a', kinds: ['🐉','🦄','🦚'], w: 1 },
+];
+const STAGES = [
+  { name: 'Con non',      mult: 1,   size: .7,  at: 0 },
+  { name: 'Thiếu niên',   mult: 2.5, size: .9,  at: 40 },
+  { name: 'Trưởng thành', mult: 6,   size: 1.15, at: 120 },
+];
+const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+let dpr = 1, scale = 1, vw = 0, vh = 0, camX = 0, camY = 0;
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1); vw = innerWidth; vh = innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr;
+  scale = Math.max(.5, Math.min(1.15, Math.min(vw / 1000, vh / 680)));
+}
+addEventListener('resize', resize); resize();
+
+// ---------- helpers ----------
+const rand = n => Math.floor(Math.random() * n);
+const dist = (a, b, c, d) => Math.hypot(a - c, b - d);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function fmt(n) {
+  n = Math.floor(n);
+  if (n < 1000) return '' + n;
+  const u = ['K','M','B','T']; let i = -1;
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return (n < 10 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.floor(n)) + u[i];
+}
+const stageOf = it => { let s = 0; const k = 1 + it.tier * .5; STAGES.forEach((st, i) => { if (it.age >= st.at * k) s = i; }); return s; };
+const income = it => it.egg ? 0 : TIERS[it.tier].inc * STAGES[stageOf(it)].mult;
+const sellValue = it => Math.floor(TIERS[it.tier].price * (it.egg ? .5 : .8 * STAGES[stageOf(it)].mult));
+const newItem = tier => ({ tier, egg: true, t: 0, kind: 0, age: 0, stored: 0, ls: 0 });
+const itemLabel = it => it.egg ? `trứng ${TIERS[it.tier].name}` : `${TIERS[it.tier].kinds[it.kind]} ${TIERS[it.tier].name}`;
+
+// ---------- world state ----------
+let now = 0, coins = 30, playing = false;
+const upg = { speed: 0, lock: 0 };
+const bases = [
+  { x: 100,  y: 720, owner: 0, name: 'Căn cứ của bạn', color: '#f2c14e', max: 6 },
+  { x: 1000, y: 720, owner: 1, name: 'Gà Tặc',  color: '#e86a5a', max: 8 },
+  { x: 100,  y: 80,  owner: 2, name: 'Cáo Già', color: '#6aa7e8', max: 8 },
+  { x: 1000, y: 80,  owner: 3, name: 'Bò Lém',  color: '#a77be0', max: 8 },
+].map(b => Object.assign(b, { slots: Array(12).fill(null), lockUntil: 0, lockCd: 0 }));
+const player = { x: 400, y: 870, r: 18, owner: 0, carry: null, from: null, stun: 0, name: 'Bạn', face: 1, walk: 0 };
+const bots = [1, 2, 3].map(i => ({
+  owner: i, x: bases[i].x + 300, y: bases[i].y + 150, r: 18, coins: 30 + rand(40), state: 'idle', tgt: null,
+  carry: null, from: null, stun: 0, think: 1 + Math.random() * 2, stealT: 20 + rand(30), chaseT: 0,
+  wx: bases[i].x + 300, wy: bases[i].y + 150, name: bases[i].name, color: bases[i].color, face: 1, walk: 0,
+}));
+// Đối thủ bắt đầu với vài con thú để có thứ mà trộm
+bots.forEach((bt, k) => {
+  const b = bases[bt.owner];
+  for (let i = 0; i < 3 + k; i++) { const it = newItem(i === 2 + k ? 1 : 0); it.egg = false; it.kind = rand(3); it.age = rand(60); it.ls = stageOf(it); b.slots[i] = it; }
+});
+let eggs = [], eggId = 0, spawnT = 0, floats = [];
+
+const slotPos = (b, i) => ({ x: b.x + 60 + (i % 6) * 96, y: b.y + 95 + Math.floor(i / 6) * 115 });
+const inBase = (b, x, y, pad = 0) => x > b.x - pad && x < b.x + BW + pad && y > b.y - pad && y < b.y + BH + pad;
+const locked = b => now < b.lockUntil;
+const emptySlot = b => { for (let i = 0; i < b.max; i++) if (!b.slots[i]) return i; return -1; };
+const lockDur = () => 25 + upg.lock * 10;
+function nearestSlot(b, x, y, maxd, occupied) {
+  let best = -1, bd = maxd;
+  for (let i = 0; i < b.max; i++) {
+    if (occupied && !b.slots[i]) continue;
+    const p = slotPos(b, i), d = dist(x, y, p.x, p.y);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+function rollTier() {
+  let r = Math.random() * TIERS.reduce((s, t) => s + t.w, 0);
+  for (let i = 0; i < TIERS.length; i++) { r -= TIERS[i].w; if (r < 0) return i; }
+  return 0;
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+function toast(msg, kind = '') {
+  const el = document.createElement('div'); el.className = 'toast ' + kind; el.textContent = msg;
+  $('toasts').prepend(el);
+  while ($('toasts').children.length > 4) $('toasts').lastChild.remove();
+  setTimeout(() => el.remove(), 3200);
+}
+const floatText = (x, y, txt, col = '#ffc83d') => floats.push({ x, y, txt, col, t: 0 });
+$('copyright').textContent = `© ${new Date().getFullYear()} ${OWNER_NAME}. ${GAME_NAME} — bảo lưu mọi quyền.`;
+$('tierList').innerHTML = TIERS.map(t => `<i style="background:${t.color}">${t.name} · ${fmt(t.price)}</i>`).join('');
+
+const UPGRADES = [
+  { id: 'speed', name: 'Giày chạy nhanh', desc: l => `Tốc độ +12% mỗi cấp (cấp ${l}/6)`, lvl: () => upg.speed, maxed: () => upg.speed >= 6, cost: () => 120 * 3 ** upg.speed, buy: () => upg.speed++ },
+  { id: 'slots', name: 'Thêm ô chuồng', desc: () => `${bases[0].max}/12 ô`, lvl: () => bases[0].max, maxed: () => bases[0].max >= 12, cost: () => Math.floor(200 * 2.6 ** (bases[0].max - 6)), buy: () => bases[0].max++ },
+  { id: 'lock', name: 'Khóa bền hơn', desc: () => `Khóa trong ${lockDur()} giây (cấp ${upg.lock}/5)`, lvl: () => upg.lock, maxed: () => upg.lock >= 5, cost: () => 300 * 3 ** upg.lock, buy: () => upg.lock++ },
+];
+function renderUpg() {
+  $('upgList').innerHTML = UPGRADES.map(u => `<div class="upg"><b>${u.name}</b><span>${u.desc(u.lvl())}</span>
+    <button class="btn" type="button" id="u-${u.id}" ${u.maxed() || coins < u.cost() ? 'disabled' : ''}>${u.maxed() ? 'Tối đa' : '🪙 ' + fmt(u.cost())}</button></div>`).join('');
+  UPGRADES.forEach(u => $('u-' + u.id).onclick = () => {
+    if (u.maxed() || coins < u.cost()) return;
+    coins -= u.cost(); u.buy(); toast(`Đã nâng cấp: ${u.name}`, 'good'); renderUpg(); save();
+  });
+}
+const openUpg = () => { renderUpg(); $('upgModal').hidden = false; };
+$('upgBtn').onclick = openUpg;
+$('closeUpg').onclick = () => $('upgModal').hidden = true;
+$('lockBtn').onclick = doLock;
+$('actBtn').onclick = () => { const a = getAction(); if (a && a.fn && !a.dis) a.fn(); };
+$('sellBtn').onclick = () => { const s = getSell(); if (s) s.fn(); };
+
+// ---------- player actions ----------
+function getAction() {
+  if (player.stun > 0) return { label: 'Choáng...', dis: true };
+  const own = bases[0];
+  if (player.carry) {
+    if (inBase(own, player.x, player.y)) return { label: `Bán · 🪙${fmt(sellValue(player.carry))}`, fn: () => { coins += sellValue(player.carry); toast('Hết ô trống, đã bán ' + itemLabel(player.carry)); player.carry = null; player.from = null; } };
+    return { label: 'Mang về nhà!', dis: true };
+  }
+  let e = null, bd = 60;
+  for (const eg of eggs) { const d = dist(player.x, player.y, eg.x, eg.y); if (d < bd) { bd = d; e = eg; } }
+  if (e) { const t = TIERS[e.tier]; return { label: `Mua ${t.name} · 🪙${fmt(t.price)}`, dis: coins < t.price, fn: () => buyEgg(e) }; }
+  for (const b of bases) {
+    if (b.owner === 0 || !inBase(b, player.x, player.y)) continue;
+    const i = nearestSlot(b, player.x, player.y, 55, true);
+    if (i >= 0) return { label: `Trộm ${itemLabel(b.slots[i])}`, steal: true, fn: () => steal(b, i) };
+  }
+  return null;
+}
+function getSell() {
+  const own = bases[0];
+  if (player.carry || !inBase(own, player.x, player.y)) return null;
+  const i = nearestSlot(own, player.x, player.y, 55, true);
+  if (i < 0) return null;
+  const it = own.slots[i];
+  return { label: `Bán · 🪙${fmt(sellValue(it) + it.stored)}`, fn: () => {
+    const v = sellValue(it) + Math.floor(it.stored); coins += v; own.slots[i] = null;
+    const p = slotPos(own, i); floatText(p.x, p.y - 30, '+' + fmt(v)); toast(`Đã bán ${itemLabel(it)}`); save();
+  } };
+}
+function buyEgg(e) {
+  const t = TIERS[e.tier];
+  if (coins < t.price) { toast('Không đủ vàng!', 'bad'); return; }
+  coins -= t.price; eggs = eggs.filter(x => x !== e);
+  player.carry = newItem(e.tier); player.from = null;
+  toast(`Đã mua trứng ${t.name}. Mang về căn cứ!`);
+}
+function steal(b, i) {
+  player.carry = b.slots[i]; b.slots[i] = null; player.from = { b: b.owner, i };
+  const bt = bots[b.owner - 1];
+  if (bt.state !== 'chase' && !bt.stun) { bt.state = 'chase'; bt.chaseT = 9; if (bt.carry && !bt.from) { /* giữ trứng đang mang */ } }
+  toast(`${b.name} phát hiện bạn! Chạy về nhà!`, 'bad');
+}
+function doLock() {
+  const b = bases[0];
+  if (locked(b)) { toast(`Căn cứ đang khóa (${Math.ceil(b.lockUntil - now)}s)`); return; }
+  if (now < b.lockCd) { toast(`Chờ ${Math.ceil(b.lockCd - now)}s để khóa lại`); return; }
+  b.lockUntil = now + lockDur(); b.lockCd = b.lockUntil + 40;
+  toast(`Đã khóa căn cứ ${lockDur()} giây`, 'good');
+}
+function placeAt(b, i, it) { b.slots[i] = it; }
+
+// ---------- input ----------
+const keys = {};
+addEventListener('keydown', e => {
+  if (!playing || e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase(); keys[k] = true;
+  if (k === 'e' || k === ' ') { e.preventDefault(); $('actBtn').onclick(); }
+  if (k === 'q') $('sellBtn').onclick();
+  if (k === 'l') doLock();
+  if (k === 'u') $('upgModal').hidden ? openUpg() : ($('upgModal').hidden = true);
+  if (k === 'escape') $('upgModal').hidden = true;
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+let joy = null;
+cv.addEventListener('pointerdown', e => {
+  if (!playing) return;
+  joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, dx: 0, dy: 0 };
+  const j = $('joy'); j.hidden = false; j.style.left = e.clientX + 'px'; j.style.top = e.clientY + 'px';
+  $('joyKnob').style.transform = '';
+});
+addEventListener('pointermove', e => {
+  if (!joy || e.pointerId !== joy.id) return;
+  let dx = e.clientX - joy.ox, dy = e.clientY - joy.oy; const d = Math.hypot(dx, dy), m = 50;
+  if (d > m) { dx *= m / d; dy *= m / d; }
+  joy.dx = dx / m; joy.dy = dy / m;
+  $('joyKnob').style.transform = `translate(${dx}px,${dy}px)`;
+});
+const endJoy = e => { if (joy && e.pointerId === joy.id) { joy = null; $('joy').hidden = true; } };
+addEventListener('pointerup', endJoy); addEventListener('pointercancel', endJoy);
+
+// ---------- movement / physics ----------
+function moveTo(e, tx, ty, sp, dt) {
+  const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
+  if (d < 2) return d;
+  const s = Math.min(d, sp * dt); e.x += dx / d * s; e.y += dy / d * s;
+  if (Math.abs(dx) > 1) e.face = dx > 0 ? 1 : -1; e.walk += dt * 10;
+  return d;
+}
+function physics(e) {
+  e.x = clamp(e.x, e.r, W - e.r); e.y = clamp(e.y, e.r, H - e.r);
+  for (const b of bases) {
+    if (b.owner === e.owner || !locked(b) || !inBase(b, e.x, e.y, e.r)) continue;
+    const L = e.x - (b.x - e.r), R = b.x + BW + e.r - e.x, T = e.y - (b.y - e.r), B = b.y + BH + e.r - e.y, m = Math.min(L, R, T, B);
+    if (m === L) e.x -= L; else if (m === R) e.x += R; else if (m === T) e.y -= T; else e.y += B;
+  }
+}
+
+// ---------- bots ----------
+function botDecide(bt) {
+  const home = bases[bt.owner];
+  if (!locked(home) && now >= home.lockCd && Math.random() < .05) { home.lockUntil = now + 20; home.lockCd = now + 70; }
+  if (bt.stealT <= 0) {
+    bt.stealT = 30 + rand(40);
+    const cands = [];
+    bases.forEach(b => {
+      if (b.owner === bt.owner || locked(b)) return;
+      for (let i = 0; i < b.max; i++) if (b.slots[i]) cands.push({ b: b.owner, i, w: (b.owner === 0 ? 3 : 1) * (1 + b.slots[i].tier * 2) });
+    });
+    if (cands.length) {
+      let r = Math.random() * cands.reduce((s, c) => s + c.w, 0), pick = cands[0];
+      for (const c of cands) { r -= c.w; if (r < 0) { pick = c; break; } }
+      bt.tgt = pick; bt.state = 'steal'; return;
+    }
+  }
+  if (emptySlot(home) >= 0) {
+    const ok = eggs.filter(e => TIERS[e.tier].price <= bt.coins && e.x < W - 250 && e.x > 50).sort((a, b) => b.tier - a.tier || dist(bt.x, bt.y, a.x, a.y) - dist(bt.x, bt.y, b.x, b.y));
+    if (ok.length && Math.random() < .7) { bt.tgt = ok[0].id; bt.state = 'buy'; return; }
+  }
+  bt.wx = home.x + 60 + Math.random() * (BW - 120); bt.wy = home.y + 60 + Math.random() * (BH - 120);
+}
+function botUpdate(bt, dt) {
+  const home = bases[bt.owner];
+  bt.stealT -= dt;
+  if (bt.stun > 0) { bt.stun -= dt; return; }
+  const sp = 150 * (bt.carry && bt.from ? .8 : 1);
+  switch (bt.state) {
+    case 'idle':
+      moveTo(bt, bt.wx, bt.wy, sp * .5, dt);
+      if ((bt.think -= dt) <= 0) { bt.think = 1 + Math.random() * 1.5; botDecide(bt); }
+      break;
+    case 'buy': {
+      const e = eggs.find(e => e.id === bt.tgt);
+      if (!e || bt.coins < TIERS[e.tier].price || emptySlot(home) < 0) { bt.state = 'idle'; break; }
+      if (moveTo(bt, e.x + 25, e.y, sp, dt) < 30) {
+        eggs = eggs.filter(x => x !== e); bt.coins -= TIERS[e.tier].price;
+        bt.carry = newItem(e.tier); bt.from = null; bt.state = 'home';
+        if (e.tier >= 3) toast(`${bt.name} vừa mua trứng ${TIERS[e.tier].name}!`);
+      }
+      break;
+    }
+    case 'steal': {
+      const b = bases[bt.tgt.b], p = slotPos(b, bt.tgt.i);
+      if (locked(b) || !b.slots[bt.tgt.i]) { bt.state = 'idle'; break; }
+      if (moveTo(bt, p.x, p.y, sp, dt) < 26) {
+        bt.carry = b.slots[bt.tgt.i]; b.slots[bt.tgt.i] = null; bt.from = { b: bt.tgt.b, i: bt.tgt.i }; bt.state = 'home';
+        if (b.owner === 0) toast(`🚨 ${bt.name} đang trộm ${itemLabel(bt.carry)} của bạn! Đuổi theo!`, 'bad');
+      }
+      break;
+    }
+    case 'home': {
+      const cx = home.x + BW / 2, cy = home.y + BH / 2;
+      if (moveTo(bt, cx, cy, sp, dt) < 120) {
+        const i = emptySlot(home);
+        if (i >= 0) placeAt(home, i, bt.carry); else bt.coins += sellValue(bt.carry);
+        if (bt.from && bt.from.b === 0) toast(`${bt.name} đã cuỗm mất ${itemLabel(bt.carry)}...`, 'bad');
+        bt.carry = null; bt.from = null; bt.state = 'idle';
+      }
+      break;
+    }
+    case 'chase':
+      if (!player.carry || !player.from || player.from.b !== bt.owner || (bt.chaseT -= dt) <= 0) { bt.state = 'idle'; break; }
+      moveTo(bt, player.x, player.y, 158, dt);
+      if (dist(bt.x, bt.y, player.x, player.y) < bt.r + player.r) {
+        const b = bases[bt.owner], i = b.slots[player.from.i] ? emptySlot(b) : player.from.i;
+        if (i >= 0) b.slots[i] = player.carry;
+        player.carry = null; player.from = null; player.stun = 1.2; bt.state = 'idle';
+        toast(`${bt.name} bắt được bạn và lấy lại đồ!`, 'bad');
+      }
+      break;
+  }
+}
+
+// ---------- main update ----------
+function update(dt) {
+  now += dt;
+  // băng chuyền
+  if ((spawnT -= dt) <= 0) { spawnT = 1.3 + Math.random() * .6; const tier = rollTier(); eggs.push({ id: ++eggId, x: -30, y: BELT_Y, tier }); if (tier >= 3) toast(`Trứng ${TIERS[tier].name} xuất hiện trên băng chuyền!`, 'good'); }
+  eggs.forEach(e => e.x += BELT_SPEED * dt);
+  eggs = eggs.filter(e => e.x < W + 40);
+
+  // ấp trứng, lớn lên, ra vàng
+  for (const b of bases) for (let i = 0; i < b.max; i++) {
+    const it = b.slots[i]; if (!it) continue;
+    if (it.egg) {
+      it.t += dt;
+      if (it.t >= TIERS[it.tier].hatch) { it.egg = false; it.kind = rand(3); it.age = 0; it.ls = 0; if (b.owner === 0) { toast(`Trứng nở ra ${TIERS[it.tier].kinds[it.kind]} ${TIERS[it.tier].name}!`, 'good'); const p = slotPos(b, i); floatText(p.x, p.y - 40, 'Nở!', '#fff'); } }
+    } else {
+      it.age += dt; const s = stageOf(it);
+      if (s > it.ls) { it.ls = s; if (b.owner === 0) { const p = slotPos(b, i); floatText(p.x, p.y - 44, STAGES[s].name + '!', '#fff'); } }
+      const g = income(it) * dt;
+      if (b.owner === 0) it.stored += g; else bots[b.owner - 1].coins += g;
+    }
+  }
+
+  // người chơi
+  const own = bases[0];
+  let mx = 0, my = 0;
+  if (keys['a'] || keys['arrowleft']) mx--; if (keys['d'] || keys['arrowright']) mx++;
+  if (keys['w'] || keys['arrowup']) my--; if (keys['s'] || keys['arrowdown']) my++;
+  if (joy) { mx += joy.dx; my += joy.dy; }
+  const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
+  if (player.stun > 0) { player.stun -= dt; mx = my = 0; }
+  const sp = 210 * (1 + upg.speed * .12) * (player.carry ? (player.from ? .75 : .9) : 1);
+  player.x += mx * sp * dt; player.y += my * sp * dt;
+  if (Math.abs(mx) > .1) player.face = mx > 0 ? 1 : -1;
+  if (ml > .1) player.walk += dt * 10;
+  physics(player);
+
+  if (inBase(own, player.x, player.y)) {
+    if (player.carry) {
+      const i = emptySlot(own);
+      if (i >= 0) {
+        const it = player.carry; placeAt(own, i, it);
+        if (player.from) toast(`Trộm thành công ${itemLabel(it)}!`, 'good');
+        player.carry = null; player.from = null; save();
+      }
+    }
+    for (let i = 0; i < own.max; i++) {
+      const it = own.slots[i]; if (!it || it.stored < 1) continue;
+      const p = slotPos(own, i);
+      if (dist(player.x, player.y, p.x, p.y) < 48) { const v = Math.floor(it.stored); coins += v; it.stored -= v; floatText(p.x, p.y - 30, '+' + fmt(v)); }
+    }
+  }
+
+  bots.forEach(bt => { botUpdate(bt, dt); physics(bt); });
+  // bắt kẻ trộm
+  for (const bt of bots) {
+    if (!bt.carry || !bt.from || bt.from.b !== 0) continue;
+    if (dist(bt.x, bt.y, player.x, player.y) < bt.r + player.r + 6) {
+      const i = own.slots[bt.from.i] ? emptySlot(own) : bt.from.i;
+      if (i >= 0) own.slots[i] = bt.carry; else if (!player.carry) { player.carry = bt.carry; player.from = null; }
+      toast(`Đã giành lại ${itemLabel(bt.carry)}!`, 'good');
+      bt.carry = null; bt.from = null; bt.stun = 2; bt.state = 'idle';
+    }
+  }
+  floats.forEach(f => f.t += dt); floats = floats.filter(f => f.t < 1.2);
+}
+
+// ---------- drawing ----------
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+function drawEgg(x, y, tier, s = 1) {
+  const t = TIERS[tier];
+  if (tier >= 3) { ctx.save(); ctx.shadowColor = t.color; ctx.shadowBlur = 18 + Math.sin(now * 5) * 6; }
+  ctx.fillStyle = t.color; ctx.strokeStyle = '#2b1d0e'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(x, y, 13 * s, 17 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  if (tier >= 3) ctx.restore();
+  ctx.fillStyle = t.spot;
+  [[-5, -6, 3], [4, 2, 2.5], [-3, 7, 2], [6, -8, 1.8]].forEach(([a, b, r]) => { ctx.beginPath(); ctx.arc(x + a * s, y + b * s, r * s, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.ellipse(x - 5 * s, y - 8 * s, 3 * s, 5 * s, -.4, 0, Math.PI * 2); ctx.fill();
+}
+function drawAnimal(x, y, it, bob = 0) {
+  const st = STAGES[stageOf(it)], size = 38 * st.size;
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(x, y + size * .38, size * .4, size * .14, 0, 0, Math.PI * 2); ctx.fill();
+  if (it.tier >= 3) { ctx.save(); ctx.shadowColor = TIERS[it.tier].color; ctx.shadowBlur = 16; }
+  ctx.font = `${size}px ${EMOJI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(TIERS[it.tier].kinds[it.kind], x, y + bob);
+  if (it.tier >= 3) ctx.restore();
+}
+function label(txt, x, y, size, fill = '#fff4dc', stroke = '#2b1d0e') {
+  ctx.font = `800 ${size}px 'Baloo 2', 'Trebuchet MS', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = Math.max(3, size / 5); ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(txt, x, y);
+  ctx.fillStyle = fill; ctx.fillText(txt, x, y);
+}
+function drawItem(it, x, y) {
+  if (it.egg) drawEgg(x, y, it.tier); else drawAnimal(x, y, it, Math.sin(now * 3 + x) * 2);
+}
+function drawChar(e, body, hat, isPlayer) {
+  const bob = Math.abs(Math.sin(e.walk)) * 3;
+  ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(e.x, e.y + 16, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = body; ctx.strokeStyle = '#2b1d0e'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(e.x, e.y - bob, e.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#2b1d0e';
+  ctx.beginPath(); ctx.arc(e.x + e.face * 6, e.y - 4 - bob, 3, 0, Math.PI * 2); ctx.arc(e.x + e.face * 13, e.y - 4 - bob, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = hat; ctx.beginPath(); ctx.ellipse(e.x, e.y - e.r - bob + 2, 20, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  roundRect(e.x - 11, e.y - e.r - 14 - bob, 22, 14, 4); ctx.fill(); ctx.stroke();
+  if (e.carry) drawItem(e.carry, e.x, e.y - e.r - 34 - bob);
+  label(e.name, e.x, e.y + 30, 14, isPlayer ? '#ffc83d' : '#fff4dc');
+  if (e.stun > 0) label('💫', e.x, e.y - e.r - 20, 18);
+}
+function drawBase(b) {
+  const isMe = b.owner === 0;
+  ctx.fillStyle = b.color; ctx.globalAlpha = .35; roundRect(b.x, b.y, BW, BH, 18); ctx.fill(); ctx.globalAlpha = 1;
+  // hàng rào
+  ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 6; roundRect(b.x, b.y, BW, BH, 18); ctx.stroke();
+  ctx.fillStyle = '#8a5a30';
+  for (let x = b.x + 20; x < b.x + BW; x += 40) { ctx.fillRect(x - 3, b.y - 6, 6, 12); ctx.fillRect(x - 3, b.y + BH - 6, 6, 12); }
+  const by = b.y < H / 2 ? b.y + BH + 22 : b.y - 22;
+  label(b.name + (isMe ? '' : ` · 🪙${fmt(bots[b.owner - 1].coins)}`), b.x + BW / 2, by, 24, isMe ? '#ffc83d' : '#fff4dc');
+  for (let i = 0; i < 12; i++) {
+    const p = slotPos(b, i);
+    if (i >= b.max) { if (isMe) { ctx.globalAlpha = .35; ctx.fillStyle = '#2b1d0e'; ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; label('🔒', p.x, p.y, 18); } continue; }
+    ctx.fillStyle = '#c9a15f'; ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(p.x, p.y + 6, 32, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#e8c98a'; ctx.lineWidth = 2;
+    for (let k = 0; k < 6; k++) { const a = k + i; ctx.beginPath(); ctx.arc(p.x, p.y + 6, 22, a, a + .8); ctx.stroke(); }
+    const it = b.slots[i]; if (!it) continue;
+    drawItem(it, p.x, p.y);
+    if (it.egg) {
+      const pr = it.t / TIERS[it.tier].hatch;
+      ctx.strokeStyle = '#fff4dc'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(p.x, p.y + 6, 36, -Math.PI / 2, -Math.PI / 2 + pr * Math.PI * 2); ctx.stroke();
+    } else if (isMe && it.stored >= 1) {
+      label('🪙' + fmt(it.stored), p.x, p.y - 36, 15, '#ffc83d');
+    } else if (!isMe && it.tier >= 2) {
+      label(TIERS[it.tier].name, p.x, p.y - 36, 12, TIERS[it.tier].color);
+    }
+  }
+  if (locked(b)) {
+    ctx.save(); ctx.globalAlpha = .28 + Math.sin(now * 6) * .06; ctx.fillStyle = '#5fd0e8'; roundRect(b.x - 8, b.y - 8, BW + 16, BH + 16, 22); ctx.fill(); ctx.restore();
+    ctx.strokeStyle = '#5fd0e8'; ctx.lineWidth = 4; ctx.setLineDash([14, 10]); ctx.lineDashOffset = -now * 40;
+    roundRect(b.x - 8, b.y - 8, BW + 16, BH + 16, 22); ctx.stroke(); ctx.setLineDash([]);
+    label(`🔒 ${Math.ceil(b.lockUntil - now)}s`, b.x + BW / 2, b.y + BH / 2, 30, '#fff');
+  }
+}
+function drawWorld() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#5a9a3e'; ctx.fillRect(0, 0, cv.width, cv.height);
+  const z = dpr * scale, viewW = vw / scale, viewH = vh / scale;
+  camX = viewW >= W ? (W - viewW) / 2 : clamp(player.x - viewW / 2, 0, W - viewW);
+  camY = viewH >= H ? (H - viewH) / 2 : clamp(player.y - viewH / 2, 0, H - viewH);
+  ctx.setTransform(z, 0, 0, z, -camX * z, -camY * z);
+  // cỏ ô cờ
+  for (let x = 0; x < W; x += 100) for (let y = 0; y < H; y += 100) { ctx.fillStyle = ((x + y) / 100) % 2 ? '#7cc25a' : '#74b953'; ctx.fillRect(x, y, 100, 100); }
+  // băng chuyền
+  ctx.fillStyle = '#3b3a44'; ctx.fillRect(0, BELT_Y - 38, W, 76);
+  ctx.strokeStyle = '#55545f'; ctx.lineWidth = 6; const off = (now * BELT_SPEED) % 50;
+  for (let x = -50 + off; x < W + 50; x += 50) { ctx.beginPath(); ctx.moveTo(x - 10, BELT_Y - 22); ctx.lineTo(x + 8, BELT_Y); ctx.lineTo(x - 10, BELT_Y + 22); ctx.stroke(); }
+  ctx.fillStyle = '#ffc83d'; ctx.fillRect(0, BELT_Y - 44, W, 8); ctx.fillRect(0, BELT_Y + 36, W, 8);
+  ctx.fillStyle = '#2b1d0e'; for (let x = 0; x < W; x += 30) { ctx.fillRect(x, BELT_Y - 44, 14, 8); ctx.fillRect(x + 15, BELT_Y + 36, 14, 8); }
+  // máy ấp trứng ở đầu băng chuyền
+  ctx.fillStyle = '#c4134a'; ctx.strokeStyle = '#2b1d0e'; ctx.lineWidth = 4; roundRect(-20, BELT_Y - 70, 70, 140, 14); ctx.fill(); ctx.stroke();
+  label('TRỨNG', 18, BELT_Y, 14);
+
+  bases.forEach(drawBase);
+  // trứng trên băng chuyền
+  const act = playing && !player.carry ? getAction() : null;
+  for (const e of eggs) {
+    drawEgg(e.x, e.y, e.tier, 1.15);
+    const t = TIERS[e.tier], near = dist(player.x, player.y, e.x, e.y) < 60;
+    label('🪙' + fmt(t.price), e.x, e.y - 32, near ? 16 : 12, coins >= t.price ? '#ffc83d' : '#ff9a90');
+    if (near && act) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(e.x, e.y, 26, 0, Math.PI * 2); ctx.stroke(); label(t.name, e.x, e.y + 32, 13, t.color); }
+  }
+  bots.forEach(bt => {
+    drawChar(bt, bt.color, '#2b1d0e', false);
+    if (bt.state === 'chase') label('❗', bt.x, bt.y - 58, 22, '#e8453c');
+    if (bt.carry && bt.from && bt.from.b === 0) label('KẺ TRỘM', bt.x, bt.y - 70, 14, '#e8453c');
+  });
+  drawChar(player, '#ffc83d', '#c4134a', true);
+  floats.forEach(f => { ctx.globalAlpha = 1 - f.t / 1.2; label(f.txt, f.x, f.y - f.t * 40, 20, f.col); ctx.globalAlpha = 1; });
+  drawMinimap();
+}
+function drawMinimap() {
+  const mw = 150, mh = mw * H / W, x0 = (vw - mw - Math.max(12, 0)) * dpr, y0 = (vh - mh - 130) * dpr, k = mw / W * dpr;
+  if (vw < 520) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = 'rgba(43,29,14,.7)'; ctx.fillRect(x0 - 4 * dpr, y0 - 4 * dpr, (mw + 8) * dpr, (mh + 8) * dpr);
+  ctx.fillStyle = '#74b953'; ctx.fillRect(x0, y0, mw * dpr, mh * dpr);
+  ctx.fillStyle = '#3b3a44'; ctx.fillRect(x0, y0 + (BELT_Y - 38) * k, W * k, 76 * k);
+  bases.forEach(b => { ctx.fillStyle = locked(b) ? '#5fd0e8' : b.color; ctx.fillRect(x0 + b.x * k, y0 + b.y * k, BW * k, BH * k); });
+  bots.forEach(bt => { ctx.fillStyle = bt.carry && bt.from && bt.from.b === 0 ? '#e8453c' : '#2b1d0e'; ctx.beginPath(); ctx.arc(x0 + bt.x * k, y0 + bt.y * k, 3 * dpr, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + player.x * k, y0 + player.y * k, 4 * dpr, 0, Math.PI * 2); ctx.fill();
+}
+
+// ---------- HUD ----------
+let hudT = 0;
+function updateHud() {
+  $('coins').textContent = '🪙 ' + fmt(coins);
+  const ips = bases[0].slots.slice(0, bases[0].max).reduce((s, it) => s + (it ? income(it) : 0), 0);
+  $('ips').textContent = `+${fmt(ips)} / giây`;
+  const a = getAction(), btn = $('actBtn');
+  btn.hidden = !a;
+  if (a) { btn.textContent = a.label; btn.disabled = !!a.dis; btn.classList.toggle('steal', !!a.steal); }
+  const s = getSell(); $('sellBtn').hidden = !s; if (s) $('sellBtn').textContent = s.label;
+  const b = bases[0], lb = $('lockBtn');
+  lb.textContent = locked(b) ? `Đang khóa ${Math.ceil(b.lockUntil - now)}s` : now < b.lockCd ? `Khóa lại sau ${Math.ceil(b.lockCd - now)}s` : 'Khóa căn cứ';
+  lb.disabled = locked(b) || now < b.lockCd;
+}
+
+// ---------- save / load ----------
+function serialize() {
+  const b = bases[0];
+  return { v: 1, coins, upg, max: b.max, name: player.name, slots: b.slots.slice(0, b.max) };
+}
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); } catch (e) {} }
+function load(d) {
+  if (!d) { try { d = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { d = null; } }
+  if (!d || d.v !== 1) return false;
+  coins = d.coins || 0; Object.assign(upg, d.upg || {}); bases[0].max = clamp(d.max || 6, 6, 12);
+  player.name = d.name || 'Bạn';
+  (d.slots || []).forEach((it, i) => { if (it) bases[0].slots[i] = Object.assign(newItem(0), it); });
+  return true;
+}
+setInterval(() => playing && save(), 5000);
+addEventListener('visibilitychange', () => document.hidden && playing && save());
+const HOT = (window.claude && window.claude.hot) || null;
+if (HOT && HOT.snapshot) HOT.snapshot(() => ({ save: serialize() }));
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(.05, (t - last) / 1000); last = t;
+  if (playing && $('upgModal').hidden) update(dt);
+  drawWorld();
+  if ((hudT -= dt) <= 0 && playing) { hudT = .1; updateHud(); }
+  requestAnimationFrame(frame);
+}
+
+function start(data) {
+  const had = load(data && data.save);
+  $('nameInput').value = player.name;
+  if (had) $('playBtn').textContent = 'Chơi tiếp';
+  $('playBtn').onclick = () => {
+    player.name = ($('nameInput').value.trim() || 'Bạn').slice(0, 14);
+    $('startModal').hidden = true; playing = true; save();
+    if (!had) setTimeout(() => toast('Đi lên băng chuyền ở giữa và mua một quả trứng'), 300);
+    else toast('Chào mừng trở lại!');
+  };
+  if (data && data.save) $('playBtn').onclick();
+  requestAnimationFrame(frame);
+}
+if (HOT && HOT.ready) HOT.ready(start); else start((HOT && HOT.data) || {});
+</script>
+</body>
+</html>
